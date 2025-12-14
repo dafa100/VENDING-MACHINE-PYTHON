@@ -2,7 +2,7 @@ import tkinter as tk
 import mysql.connector
 import time,os
 # buat ngimpor gambar dari folder UAS_ALGORITMA di laptop ini
-IMAGE_DIR = r"C:\Users\USER\Downloads\ALGORITMA\UAS_ALGORITMA"
+IMAGE_DIR = "gambar_produk"
 MULTITAP = {
     "1": ["1", "a", "b", "c"],
     "2": ["2", "d", "e", "f"],
@@ -30,12 +30,18 @@ def load_products_from_mysql():
 
         products = []
         for idp, nama, harga, gambar in rows:
-            products.append((idp, nama, harga, gambar))
+            # bersihkan gambar jika masih ada path lama
+            if gambar.startswith(IMAGE_DIR + "/") or gambar.startswith(IMAGE_DIR + "\\"):
+                gambar = os.path.basename(gambar)
+            # gabungkan path lengkap untuk gambar
+            full_path = os.path.join(IMAGE_DIR, gambar)
+            products.append((idp, nama, harga, full_path))
         return products
 
     except Exception as e:
         print("Gagal load dari MySQL:", e)
         return []
+    
 def insert_product_to_mysql(nama, harga, gambar):
     try:
         conn = mysql.connector.connect(
@@ -46,9 +52,12 @@ def insert_product_to_mysql(nama, harga, gambar):
         )
         cur = conn.cursor()
 
+        # simpan nama file saja, bukan path lengkap
+        filename = os.path.basename(gambar)
+
         # kalau id_produk auto increment, jangan diisi.
         sql = "INSERT INTO produk (nama_barang, harga_barang, gambar_produk) VALUES (%s, %s, %s)"
-        cur.execute(sql, (nama, harga, gambar))
+        cur.execute(sql, (nama, harga, filename))
 
         conn.commit()
         conn.close()
