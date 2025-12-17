@@ -2,7 +2,8 @@ import tkinter as tk
 import mysql.connector
 import time,os
 # buat ngimpor gambar dari folder UAS_ALGORITMA di laptop ini
-IMAGE_DIR = "gambar_produk"
+IMAGE_DIR = r"C:\Users\USER\Downloads\ALGORITMA\UAS_ALGORITMA\gambar_produk"
+# keypad angka dan huruf
 MULTITAP = {
     "1": ["1", "a", "b", "c"],
     "2": ["2", "d", "e", "f"],
@@ -15,6 +16,7 @@ MULTITAP = {
     "9": ["9", "x", "y", "z"],
     "0": ["0"],
 }
+# fungsi buat menampilkan data2 produk di vending machine dari database sesuai urutan id_produk
 def load_products_from_mysql():
     try:
         conn = mysql.connector.connect(
@@ -41,7 +43,27 @@ def load_products_from_mysql():
     except Exception as e:
         print("Gagal load dari MySQL:", e)
         return []
-    
+# fungsi buat menampilkan data2 produk di vending machine dari database berdasarkan id_produk
+def get_product_by_id(idp):
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="db_vending"
+        )
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id_produk, nama_barang, harga_barang, gambar_produk FROM produk WHERE id_produk=%s",
+            (idp,)
+        )
+        row = cur.fetchone()
+        conn.close()
+        return row  # None kalau tidak ada
+    except Exception as e:
+        print("Gagal cek ID:", e)
+        return None
+# fungsi buat menambah data produk baru
 def insert_product_to_mysql(nama, harga, gambar):
     try:
         conn = mysql.connector.connect(
@@ -66,12 +88,57 @@ def insert_product_to_mysql(nama, harga, gambar):
     except Exception as e:
         print("Gagal INSERT:", e)
         return False
+# fungsi buat mengupdate data2 produk di vending machine berdasarkan id_produk
+def update_product_to_mysql(idp, nama, harga, gambar):
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="db_vending"
+        )
+        cur = conn.cursor()
+        # update nama file saja, bukan path lengkap
+        filename = os.path.basename(gambar)
+        sql = """
+            UPDATE produk
+            SET nama_barang=%s, harga_barang=%s, gambar_produk=%s
+            WHERE id_produk=%s
+        """
+        cur.execute(sql, (nama, harga, filename, idp))
+        conn.commit()
+        rowcount = cur.rowcount
+        conn.close()
+        return rowcount > 0
+    except Exception as e:
+        print("Gagal UPDATE:", e)
+        return False
+# fungsi buat menghapus data2 produk di vending machine berdasarkan id_produk
+def delete_product_by_id(idp):
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="db_vending"
+        )
+        cur = conn.cursor()
+        cur.execute("DELETE FROM produk WHERE id_produk=%s", (idp,))
+        conn.commit()
+        rowcount = cur.rowcount
+        conn.close()
+        return rowcount > 0
+    except Exception as e:
+        print("Gagal DELETE:", e)
+        return False
+
 PRODUCTS = []
 db_products = load_products_from_mysql()
 if db_products:
     PRODUCTS = db_products
 HAS_PRODUCTS = bool(PRODUCTS)
 
+# kelas gulir ke atas bawah agar produk tetap dalam tampilan, tidak melebar ke bawah sama tampilannya
 class ScrollFrame(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
@@ -158,6 +225,7 @@ class App:
             lbl.pack(pady=50)
             return
         for i, (code, name, price, imgfile) in enumerate(PRODUCTS):
+            code = str(code)  # <<< TAMBAH INI
             r, c = divmod(i, 3)
             card = tk.Frame(parent, bg="#f0f0f0", bd=2, relief="ridge", padx=8, pady=8)
             card.grid(row=r, column=c, padx=10, pady=10)
@@ -231,13 +299,17 @@ class App:
 
         tk.Label(self.monitor_content, textvariable=self.text, fg="white", bg="black",
                 font=("Consolas", 13)).pack(anchor="w")
-
+        
+        # Memberitahu pesan kesalahan
+        tk.Label(self.monitor_content, textvariable=self.msg, fg="yellow", bg="black",
+         font=("Arial", 8, "bold"), wraplength=180, justify="left").pack(anchor="w")
+        
         # ==== LAYAR TENGAH UNTUK "BERHASIL" ====
         self.center_label = tk.Label(self.monitor_center,
                                     text="",
                                     fg="white",
                                     bg="black",
-                                    font=("Arial", 20, "bold"))
+                                    font=("Arial", 10, "bold"))
         self.center_label.pack(expand=True)
 
         outer = tk.Frame(parent, bg="#d9d9d9", padx=10, pady=10)
@@ -273,6 +345,7 @@ class App:
                 c = 0
                 r += 1
     def show_menu(self):
+        self.show_normal_monitor()
         self.mode = "menu"
         self.text.set("")
         self.msg.set("")
@@ -282,6 +355,33 @@ class App:
         self.label2.config(text="1. ADMIN", font=("Arial", 10, "normal"))
         self.label3.config(text="2. BELANJA", font=("Arial", 10, "normal"))
         self.label4.config(text="", font=("Arial", 10, "normal"))
+    def highlight_shop(self, step):
+        # reset putih dulu
+        self.label1.config(fg="white")
+        self.label3.config(fg="white")
+        # step aktif hijau
+        if step == 1:
+            self.label1.config(fg="lime")
+        elif step == 2:
+            self.label3.config(fg="lime")
+    def show_shop(self):
+        self.show_normal_monitor()   # biar aman kalau sebelumnya layar center
+        self.mode = "shop"
+        self.shop_step = 1
+        self.balance = 0
+
+        self.text.set("")
+        self.msg.set("")
+
+        self.label1.config(text="MASUKKAN UANG", font=("Arial", 9, "bold"))
+        self.label2.config(text="", font=("Arial", 10))
+        self.label3.config(text="MASUKKAN ID PRODUK", font=("Arial", 9, "bold"))
+        self.label4.config(text="", font=("Arial", 10))
+
+        if hasattr(self, "label_batal"):
+            self.label_batal.config(text="0 - BATAL", font=("Arial", 12, "bold"))
+
+        self.highlight_shop(1)
     def show_pass_screen(self):
         self.mode = "pass"
         self.pass_buf = ""
@@ -329,6 +429,76 @@ class App:
         self.monitor_content.pack(fill="both", expand=True)
 
         self.show_admin_add()   # ← balik ke mode tambah barang
+    def show_admin_update(self):
+        self.mode = "admin_update"
+        self.text.set("")
+        self.msg.set("")
+
+        self.update_step = 1   # 1=id, 2=nama, 3=harga, 4=gambar
+        self.update_id = ""
+
+        # Judul + instruksi seperti gambar kamu
+        self.label1.config(text="UBAH BARANG", font=("Arial", 14, "bold"), anchor="center")
+        self.label2.config(text="MASUKKAN ID BARANG", font=("Arial", 9, "bold"))
+        self.label3.config(text="", font=("Arial", 10))
+        self.label4.config(text="", font=("Arial", 10))
+
+        if hasattr(self, "label_batal"):
+            self.label_batal.config(text="0 - BATAL", font=("Arial", 11, "bold"))
+    def continue_update_after_ok(self):
+        # tutup layar tengah "OK"
+        self.monitor_center.pack_forget()
+        self.monitor_content.pack(fill="both", expand=True)
+
+        # lanjut ke step berikutnya
+        self.update_step = 2
+        self.text.set("")
+        self.msg.set("Masukkan nama baru, lalu OK")
+
+        self.label1.config(text="UBAH BARANG", font=("Arial", 14, "bold"))
+        self.label2.config(text="NAMA BARU", font=("Arial", 11, "bold"))
+        self.label3.config(text="HARGA BARU", font=("Arial", 11, "bold"))
+        self.label4.config(text="GAMBAR BARU", font=("Arial", 11, "bold"))
+    def show_update_choice(self):
+        self.mode = "admin_update_choice"
+        self.text.set("")
+        self.msg.set("")
+
+        self.label1.config(text="UBAH BARANG", font=("Arial", 14, "bold"))
+        self.label2.config(text="1. GANTI HARGA", font=("Arial", 11, "bold"))
+        self.label3.config(text="2. GANTI GAMBAR", font=("Arial", 11, "bold"))
+        self.label4.config(text="", font=("Arial", 10))
+
+        if hasattr(self, "label_batal"):
+            self.label_batal.config(text="0 - BATAL", font=("Arial", 11, "bold"))
+    def show_admin_delete(self):
+        self.show_normal_monitor()   # biar gak nyangkut di layar center
+        self.mode = "admin_delete_id"
+        self.text.set("")
+        self.msg.set("")
+
+        self.delete_id = None
+
+        self.label1.config(text="HAPUS BARANG", font=("Arial", 14, "bold"))
+        self.label2.config(text="MASUKKAN ID BARANG", font=("Arial", 9, "bold"))
+        self.label3.config(text="", font=("Arial", 10))
+        self.label4.config(text="", font=("Arial", 10))
+
+        if hasattr(self, "label_batal"):
+            self.label_batal.config(text="0 - BATAL", font=("Arial", 11, "bold"))
+    def show_delete_confirm(self, idp):
+        self.mode = "admin_delete_confirm"
+        self.text.set("")
+        self.msg.set("")
+        self.delete_id = idp
+
+        self.label1.config(text="HAPUS BARANG", font=("Arial", 14, "bold"))
+        self.label2.config(text=f"HAPUS BARANG ({idp}) ?", font=("Arial", 11, "bold"))
+        self.label3.config(text="1 - IYA", font=("Arial", 11, "bold"))
+        self.label4.config(text="0 - TIDAK", font=("Arial", 11, "bold"))
+
+        if hasattr(self, "label_batal"):
+            self.label_batal.config(text="", font=("Arial", 10))
 
     def show_success_center(self, text="BERHASIL"):
         # sembunyikan konten normal
@@ -337,6 +507,11 @@ class App:
         # tampilkan layar tengah
         self.center_label.config(text=text)
         self.monitor_center.pack(fill="both", expand=True)
+    def show_normal_monitor(self):
+        # sembunyikan layar tengah (BERHASIL / OK)
+        self.monitor_center.pack_forget()
+        # tampilkan kembali layar normal (menu/isi)
+        self.monitor_content.pack(fill="both", expand=True)
     def reset_label_batal(self):
         self.label_batal.config(text="")
     def reset_label_colors(self):
@@ -346,6 +521,7 @@ class App:
         self.label4.config(fg="white")
         self.label_batal.config(fg="white")
     def show_admin_menu(self):
+        self.show_normal_monitor()
         self.mode = "admin_menu"
         self.text.set("")
         self.msg.set("")
@@ -357,17 +533,22 @@ class App:
         self.label4.config(text="4. KELUAR",      font=("Arial", 10, "bold"))
     def handle_key(self, key):
         self.msg.set("")
-
-
-            # ================= MODE MENU: ketik 1 lalu OK =================
+            # ================= MODE MENU: =================
         if self.mode == "menu":
+            if key == "X":
+                self.text.set(self.text.get()[:-1])
+                return
+
+            if key.isdigit():
+                self.text.set(self.text.get() + key)
+                return
+                
             if key == "OK":
                 val = self.text.get()
                 if val == "1":
                     self.show_pass_screen()
-                #elif val == "2":
-                    #self.mode = "shop"   # << MASUK MODE BELANJA
-                    #self.text.set("")
+                if val == "2":
+                    self.show_shop()
                 return
 
         # ================= MODE PASSWORD =================
@@ -403,6 +584,10 @@ class App:
                 pilihan = self.text.get().strip()
                 if pilihan == "1":        # 1. MENAMBAHKAN
                     self.show_admin_add()
+                elif pilihan == "2":        # 2. MEMPERBARUI
+                    self.show_admin_update()
+                elif pilihan == "3":      # 3. MENGHAPUS
+                    self.show_admin_delete()
                 elif pilihan == "4":      # 4. KELUAR
                     self.show_menu()
                 # 2 dan 3 nanti bisa ditambah di sini
@@ -412,7 +597,7 @@ class App:
                 self.text.set(self.text.get() + key)
             return
 
-    # ================= MODE TAMBAH BARANG (ADMIN ADD) =================
+        # ================= MODE TAMBAH BARANG (ADMIN ADD) =================
         if self.mode == "admin_add":
             # 0 + OK = batal → kembali ke menu admin
             if key == "OK":
@@ -526,51 +711,317 @@ class App:
                     cur = cur[:-1]
                 self.text.set(cur + ch)
                 return
+        # ================= MODE UPDATE (ADMIN UPDATE) =================
+        if self.mode == "admin_update":
+            if key == "X":
+                self.text.set(self.text.get()[:-1])
+                return
+            if key.isdigit():
+                self.text.set(self.text.get() + key)
+                return
+            if key == "OK":
+                teks = self.text.get().strip()
 
-        # ================= MODE SHOP / BELANJA (logika lama, dipersingkat) =================
-        if key == "OK":
-            self.buy()
+                # 0 = batal
+                if teks == "0":
+                    self.show_admin_menu()
+                    return
+
+                # ambil ID
+                if self.update_step == 1:
+                    idp = int(teks)
+                    row = get_product_by_id(idp)
+                    if row is None:
+                        self.msg.set(f"Tidak ada produk dengan \n id {idp}")
+                        self.text.set("")          # opsional: bersihin input biar enak
+                        return
+
+                    # kalau ADA:
+                    self.update_id = idp
+                    self.show_update_choice()
+                    return
+        if self.mode == "admin_update_choice":
+            if key == "X":
+                self.text.set(self.text.get()[:-1])
+                return
+
+            if key.isdigit():
+                self.text.set(self.text.get() + key)
+                return
+
+            if key == "OK":
+                pilih = self.text.get().strip()
+
+                if pilih == "0":
+                    self.show_admin_menu()
+                    return
+
+                if pilih == "1":
+                    # lanjut input harga saja
+                    self.mode = "admin_update_price"
+                    self.text.set("")
+                    self.msg.set("Masukkan harga baru \n lalu OK")
+                    self.label1.config(text="UBAH HARGA", font=("Arial", 14, "bold"))
+                    self.label2.config(text="HARGA BARU", font=("Arial", 11, "bold"))
+                    self.label3.config(text="", font=("Arial", 10))
+                    self.label4.config(text="", font=("Arial", 10))
+                    return
+
+                if pilih == "2":
+                    # lanjut input gambar saja
+                    self.mode = "admin_update_image"
+                    self.text.set("")
+                    self.msg.set("Masukkan nama gambar \n lalu OK")
+                    self.label1.config(text="UBAH GAMBAR", font=("Arial", 14, "bold"))
+                    self.label2.config(text="GAMBAR BARU", font=("Arial", 11, "bold"))
+                    self.label3.config(text="", font=("Arial", 10))
+                    self.label4.config(text="", font=("Arial", 10))
+                    return
+
+                self.msg.set("Pilihan tidak valid")
+                self.text.set("")
+                return
+        if self.mode == "admin_update_price":
+            if key == "X":
+                self.text.set(self.text.get()[:-1])
+                return
+
+            if key in "0123456789":
+                self.text.set(self.text.get() + key)
+                return
+
+            if key == "OK":
+                teks = self.text.get().strip()
+                if teks == "0":
+                    self.show_admin_menu()
+                    return
+                harga_baru = int(teks)
+
+                # ambil data lama dulu
+                row = get_product_by_id(self.update_id)
+                if row is None:
+                    self.msg.set(f"Tidak ada produk dengan id {self.update_id}")
+                    return
+                _, nama_lama, _, gambar_lama = row
+
+                ok = update_product_to_mysql(self.update_id, nama_lama, harga_baru, gambar_lama)
+                if not ok:
+                    self.msg.set("Gagal update")
+                    return
+
+                self.refresh_products()
+                self.show_success_center("BERHASIL")
+                self.root.after(1500, self.show_admin_menu)
+                return
+
+            # INPUT per step
+            if self.update_step == 1 and key in "0123456789":   # id
+                self.text.set(self.text.get() + key)
+                return
+
+            if self.update_step == 3 and key in "0123456789":   # harga
+                self.text.set(self.text.get() + key)
+                return
+        if self.mode == "admin_update_image":
+            if key == "X":
+                self.text.set(self.text.get()[:-1])
+                return
+
+            if key == "OK":
+                teks = self.text.get().strip()
+                if teks == "0":
+                    self.show_admin_menu()
+                    return
+                if teks == "":
+                    self.msg.set("Tidak boleh kosong")
+                    return
+
+                filename = teks if teks.lower().endswith(".png") else teks + ".png"
+                # kalau kamu pakai IMAGE_DIR:
+                # gambar_baru = os.path.join(IMAGE_DIR, filename)
+                gambar_baru = filename
+
+                row = get_product_by_id(self.update_id)
+                if row is None:
+                    self.msg.set(f"Tidak ada produk dengan id {self.update_id}")
+                    return
+                _, nama_lama, harga_lama, _ = row
+
+                ok = update_product_to_mysql(self.update_id, nama_lama, harga_lama, gambar_baru)
+                if not ok:
+                    self.msg.set("Gagal update")
+                    return
+
+                self.refresh_products()
+                self.show_success_center("BERHASIL")
+                self.root.after(1500, self.show_admin_menu)
+                return
+        if self.mode == "admin_delete_id":
+            if key == "X":
+                self.text.set(self.text.get()[:-1])
+                return
+
+            if key in "0123456789":
+                self.text.set(self.text.get() + key)
+                return
+
+            if key == "OK":
+                teks = self.text.get().strip()
+
+                if teks == "0":            # batal
+                    self.show_admin_menu()
+                    return
+
+                if not teks.isdigit():
+                    self.msg.set("ID harus angka")
+                    return
+
+                idp = int(teks)
+                row = get_product_by_id(idp)
+                if row is None:
+                    self.msg.set(f"Tidak ada produk dengan id {idp}")
+                    self.text.set("")
+                    return
+
+                # kalau ada → masuk konfirmasi
+                self.show_delete_confirm(idp)
+                return
+        if self.mode == "admin_delete_confirm":
+            if key == "X":
+                self.text.set(self.text.get()[:-1])
+                return
+
+            if key.isdigit():
+                self.text.set(self.text.get() + key)
+                return
+
+            if key == "OK":
+                pilih = self.text.get().strip()
+
+                if pilih == "0":            # TIDAK
+                    self.show_admin_menu()
+                    return
+
+                if pilih == "1":            # IYA
+                    ok = delete_product_by_id(self.delete_id)
+                    if not ok:
+                        self.msg.set("Gagal hapus")
+                        return
+
+                    self.refresh_products()
+                    self.show_success_center("BERHASIL")
+                    self.root.after(1500, self.show_admin_menu)
+                    return
+
+                self.msg.set("Pilihan tidak valid")
+                self.text.set("")
+                return
+
+            # multitap untuk ngetik nama file
+            if key in MULTITAP:
+                now = time.time()
+                same = (key == self.last_key and now - self.last_time < self.timeout)
+                self.tap = self.tap + 1 if same else 0
+                self.last_key, self.last_time = key, now
+
+                chars = MULTITAP[key]
+                ch = chars[self.tap % len(chars)]
+                cur = self.text.get()
+                if same and cur:
+                    cur = cur[:-1]
+                self.text.set(cur + ch)
+                return
+
+            # step 2 & 4 pakai multitap (nama & gambar)
+            if self.update_step in (2, 4) and key in MULTITAP:
+                now = time.time()
+                same = (key == self.last_key and now - self.last_time < self.timeout)
+                self.tap = self.tap + 1 if same else 0
+                self.last_key, self.last_time = key, now
+
+                chars = MULTITAP[key]
+                ch = chars[self.tap % len(chars)]
+                cur = self.text.get()
+                if same and cur:
+                    cur = cur[:-1]
+                self.text.set(cur + ch)
+                return
             return
+        # ================= MODE SHOP / BELANJA =================
+        if self.mode == "shop":
+            if key == "X":
+                self.text.set(self.text.get()[:-1])
+                return
 
-        if key == "X":                  # backspace di input kode produk
-            cur = self.text.get()
-            if cur:
-                self.text.set(cur[:-1])
-            self.last_key = None
-            self.tap = 0
+            # input uang & id produk: angka saja
+            if key in "0123456789":
+                self.text.set(self.text.get() + key)
+                return
+
+            if key == "OK":
+                teks = self.text.get().strip()
+
+                # batal
+                if teks == "0":
+                    self.show_menu()
+                    return
+
+                # STEP 1: masukkan uang
+                if self.shop_step == 1:
+                    if not teks.isdigit() or int(teks) <= 0:
+                        self.msg.set("Uang harus angka > 0")
+                        return
+
+                    self.balance = int(teks)
+                    self.text.set("")
+                    self.shop_step = 2
+                    self.msg.set(f"Saldo: Rp {self.balance:,}".replace(",", "."))
+                    self.highlight_shop(2)
+                    return
+
+                # STEP 2: masukkan ID produk
+                if self.shop_step == 2:
+                    code = teks
+                    if code not in self.items:
+                        self.msg.set("Kode tidak valid.")
+                        self.text.set("")
+                        return
+
+                    item = self.items[code]
+                    if item["stock"] <= 0:
+                        self.msg.set("Stok habis.")
+                        self.text.set("")
+                        return
+
+                    price = item["price"]
+                    saldo = self.balance
+                    kode = code   # id produk
+
+                    # ===== UANG KURANG =====
+                    if saldo < price:
+                        kurang = price - saldo
+                        self.show_success_center(
+                            f"PRODUK ({kode})\nTIDAK KELUAR\nUANG KURANG :\nRp {kurang:,}".replace(",", ".")
+                        )
+                        self.root.after(2000, self.show_shop)
+                        return
+                    
+                    # ===== UANG PAS =====
+                    if saldo == price:
+                        self.show_success_center(
+                            f"PRODUK ({kode})\nKELUAR"
+                        )
+                        self.root.after(2000, self.show_shop)
+                        return
+
+                    # ===== UANG LEBIH =====
+                    kembali = saldo - price
+                    self.show_success_center(
+                        f"PRODUK ({kode})\nKELUAR\nUANG KEMBALI :\nRp {kembali:,}".replace(",", ".")
+                    )
+                    self.root.after(2000, self.show_shop)
+                    return
             return
-
-        if key not in MULTITAP:         # tombol lain (kalau ada) ditambah mentah
-            self.text.set(self.text.get() + key)
-            return
-
-        # multi-tap angka → huruf (mode belanja)
-        now = time.time()
-        same = (key == self.last_key and now - self.last_time < self.timeout)
-        self.tap = self.tap + 1 if same else 0
-        self.last_key, self.last_time = key, now
-
-        chars = MULTITAP[key]
-        ch = chars[self.tap % len(chars)]
-        cur = self.text.get()
-        if same and cur:
-            cur = cur[:-1]
-        self.text.set(cur + ch)
-
-    def buy(self):
-        code = self.text.get().strip()
-        if code not in self.items:
-            self.msg.set("Kode tidak valid.")
-            return
-        item = self.items[code]
-        if item["stock"] <= 0:
-            self.msg.set("Stok habis.")
-            return
-        item["stock"] -= 1
-        item["stok_var"].set(f"Stok : {item['stock']}")
-        self.msg.set(f"Anda membeli {item['name']} (Rp {item['price']:,})".replace(",", "."))
-        self.text.set("")
-
 if __name__ == "__main__":
     root = tk.Tk()
     App(root)
